@@ -1,0 +1,4 @@
+# Tool configuration only (dependencies are pinned in requirements*.txt).
+
+[tool.bandit]
+exclude_dirs = ["tests", ".venv", "alembic"]

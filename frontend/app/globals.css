@@ -1,0 +1,62 @@
+@import "tailwindcss";
+
+/* Mirage palette (FR-60): navy app, light yellow header. */
+@theme {
+  --color-sun: #ffe680;
+  --color-sun-deep: #ffd95a;
+  --color-navy-950: #071226;
+  --color-navy-900: #0b1a33;
+  --color-navy-800: #132648;
+  --color-navy-700: #1b3360;
+  --color-navy-600: #284577;
+  --color-ink: #e8eef8;
+  --color-muted: #93a4c3;
+  --color-faint: #5f7398;
+  --color-ai: #38bdf8;
+  --color-real: #34d399;
+  --color-danger: #f87171;
+
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  background: var(--color-navy-900);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+}
+
+/* Visible keyboard focus everywhere. */
+:focus-visible {
+  outline: 2px solid var(--color-sun);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200px 0;
+  }
+  100% {
+    background-position: calc(200px + 100%) 0;
+  }
+}
+
+.skeleton {
+  background: linear-gradient(90deg, var(--color-navy-800) 0, var(--color-navy-700) 50%, var(--color-navy-800) 100%);
+  background-size: 200px 100%;
+  background-repeat: no-repeat;
+  background-color: var(--color-navy-800);
+  animation: shimmer 1.4s ease-in-out infinite;
+}
