@@ -6,7 +6,7 @@ from sqlalchemy import func, select
 from app.db.models import User, Vote
 from app.db.session import build_engine, build_session_factory
 from app.repositories import vote_repo
-from tests.conftest import KARA, KOBE, as_user
+from tests.conftest import FRONTEND_ORIGIN, KARA, KOBE, as_user
 
 POST = 1
 
@@ -26,7 +26,8 @@ def xp(client, user):
 def db_rows(settings):
     engine = build_engine(settings.database_url)
     with build_session_factory(engine)() as db:
-        rows = db.execute(select(Vote.user_id, Vote.post_id, Vote.value)).all()
+        # Only the post under test: the seed adds votes on other posts.
+        rows = db.execute(select(Vote.user_id, Vote.post_id, Vote.value).where(Vote.post_id == POST)).all()
         xps = dict(db.execute(select(User.id, User.xp)).all())
     engine.dispose()
     return rows, xps
@@ -161,7 +162,7 @@ def test_invalid_vote_value_is_422(seeded_client, payload):
 
 
 def test_voting_requires_a_user(seeded_client):
-    r = seeded_client.put(f"/api/v1/posts/{POST}/vote", json={"value": "AI"})
+    r = seeded_client.put(f"/api/v1/posts/{POST}/vote", json={"value": "AI"}, headers={"Origin": FRONTEND_ORIGIN})
     assert r.status_code == 401
 
 
@@ -230,6 +231,6 @@ def test_db_has_exactly_one_row_after_many_mixed_requests(seeded_client, seeded)
         vote(seeded_client, KOBE, value)
     engine = build_engine(seeded.database_url)
     with build_session_factory(engine)() as db:
-        assert db.scalar(select(func.count()).select_from(Vote)) == 1
+        assert db.scalar(select(func.count()).select_from(Vote).where(Vote.post_id == POST)) == 1
     engine.dispose()
     assert xp(seeded_client, KOBE) == 160

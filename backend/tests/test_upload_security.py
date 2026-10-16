@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 from PIL import Image
 
 from app.main import create_app
-from tests.conftest import KOBE, WEBM_HEADER, as_user, gps_exif, make_jpeg, make_webp, upload
+from tests.conftest import KOBE, SEED_MEDIA, WEBM_HEADER, as_user, gps_exif, make_jpeg, make_webp, upload
 
 
 @pytest.mark.parametrize(
@@ -39,10 +39,10 @@ def test_real_image_accepted_despite_wrong_client_labels(seeded_client):
 def _small_limit_client(settings):
     settings.max_image_bytes = 20_000
     settings.max_video_bytes = 40_000
-    return TestClient(create_app(settings))
+    return TestClient(create_app(settings), base_url="https://testserver")
 
 
-def test_oversized_image_rejected(seeded):
+def test_oversized_image_rejected(seeded, app):  # `app` enables as_user()
     big = io.BytesIO()
     Image.effect_noise((300, 300), 100).convert("RGB").save(big, "PNG")
     assert 20_000 < len(big.getvalue()) < 40_000 + 1024 * 1024
@@ -52,7 +52,7 @@ def test_oversized_image_rejected(seeded):
     assert r.json()["error"]["code"] == "payload_too_large"
 
 
-def test_oversized_body_cut_off_before_parsing(seeded):
+def test_oversized_body_cut_off_before_parsing(seeded, app):
     huge = b"\xff\xd8\xff" + b"\x00" * (40_000 + 2 * 1024 * 1024)
     with _small_limit_client(seeded) as client:
         r = upload(client, KOBE, huge)
@@ -99,7 +99,8 @@ def test_media_route_rejects_bad_or_unknown_keys(seeded_client, key):
 
 
 def test_video_range_requests_supported(seeded_client):
-    post = seeded_client.get("/api/v1/posts").json()["items"][0]
+    data = (SEED_MEDIA / "real-video-1.mp4").read_bytes()
+    post = upload(seeded_client, KOBE, data, filename="clip.mp4", content_type="video/mp4").json()
     assert post["media"]["kind"] == "video"
     r = seeded_client.get(post["media"]["url"], headers={"Range": "bytes=0-99"})
     assert r.status_code == 206

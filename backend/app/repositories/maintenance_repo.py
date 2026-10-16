@@ -3,7 +3,7 @@
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
-from app.db.models import Post, Reaction, User, Vote
+from app.db.models import Comment, Post, Reaction, User, UserSession, Vote
 
 
 def ping(db: Session) -> None:
@@ -15,5 +15,6 @@ def all_media_keys(db: Session) -> list[str]:
 
 
 def wipe_all(db: Session) -> None:
-    for model in (Reaction, Vote, Post, User):
+    # Children before parents, so foreign keys never point at a deleted row.
+    for model in (Comment, Reaction, Vote, Post, UserSession, User):
         db.execute(delete(model))

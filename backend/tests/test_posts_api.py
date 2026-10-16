@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from tests.conftest import KARA, KOBE, SEED_MEDIA, as_user, make_jpeg, upload
+from tests.conftest import FRONTEND_ORIGIN, KARA, KOBE, SEED_MEDIA, as_user, make_jpeg, upload
 
 
 def _xp(client, user_id):
@@ -16,7 +16,7 @@ def test_create_image_post_awards_xp(seeded_client):
     assert body["media"]["kind"] == "image" and body["media"]["mime_type"] == "image/jpeg"
     assert body["author"]["id"] == KOBE
     assert body["votes"] == {"ai": 0, "real": 0}
-    assert _xp(seeded_client, KOBE) == before + 25
+    assert _xp(seeded_client, KOBE) == before + 20
 
 
 def test_create_video_post_without_caption(seeded_client):
@@ -52,7 +52,9 @@ def test_caption_html_is_stored_as_plain_text(seeded_client):
 
 
 def test_posting_requires_a_user(seeded_client):
-    r = seeded_client.post("/api/v1/posts", files={"file": ("a.jpg", make_jpeg(), "image/jpeg")})
+    r = seeded_client.post(
+        "/api/v1/posts", files={"file": ("a.jpg", make_jpeg(), "image/jpeg")}, headers={"Origin": FRONTEND_ORIGIN}
+    )
     assert r.status_code == 401
     assert r.json()["error"]["code"] == "unauthorized"
 
@@ -73,9 +75,9 @@ def test_delete_own_post_removes_xp_and_file(seeded_client, seeded):
 
     r = seeded_client.delete(f"/api/v1/posts/{created['id']}", headers=as_user(KOBE))
     assert r.status_code == 204
-    assert _xp(seeded_client, KOBE) == xp - 25
+    assert _xp(seeded_client, KOBE) == xp - 20
     assert not (Path(seeded.upload_dir) / key).exists()
-    assert seeded_client.get(f"/api/v1/posts/{created['id']}").status_code == 404
+    assert seeded_client.get(f"/api/v1/posts/{created['id']}", headers=as_user(KOBE)).status_code == 404
 
 
 def test_cannot_delete_someone_elses_post(seeded_client):
@@ -83,7 +85,7 @@ def test_cannot_delete_someone_elses_post(seeded_client):
     r = seeded_client.delete(f"/api/v1/posts/{created['id']}", headers=as_user(KARA))
     assert r.status_code == 403
     assert r.json()["error"]["code"] == "forbidden"
-    assert seeded_client.get(f"/api/v1/posts/{created['id']}").status_code == 200
+    assert seeded_client.get(f"/api/v1/posts/{created['id']}", headers=as_user(KOBE)).status_code == 200
 
 
 def test_delete_missing_post(seeded_client):

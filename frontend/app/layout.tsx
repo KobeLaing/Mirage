@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 import { connection } from "next/server";
 
-import { Header } from "@/components/Header";
-import { CurrentUserProvider } from "@/lib/currentUser";
+import { AppShell } from "@/components/AppShell";
+import { AuthProvider } from "@/lib/auth";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -19,10 +19,9 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   return (
     <html lang="en">
       <body className="min-h-screen bg-navy-900 antialiased">
-        <CurrentUserProvider>
-          <Header />
-          <main className="mx-auto max-w-xl px-4 pb-16 pt-5">{children}</main>
-        </CurrentUserProvider>
+        <AuthProvider>
+          <AppShell>{children}</AppShell>
+        </AuthProvider>
       </body>
     </html>
   );

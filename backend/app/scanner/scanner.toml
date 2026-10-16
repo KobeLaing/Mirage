@@ -1,0 +1,97 @@
+# AI Authenticity Scanner configuration.
+#
+# Each [detectors.<name>] table turns one detector on or off and sets its
+# weight. A detector that is missing from this file is OFF.
+#
+# HOW THE WEIGHTS WORK (the full explanation is in app/scanner/combine.py)
+# Every detector returns a score from 0 (looks real) to 1 (looks AI-made) and
+# a confidence from 0 to 1. The overall score is a weighted average:
+#
+#     overall = sum(weight * confidence * score) / sum(weight * confidence)
+#
+# so a detector with weight 4 counts four times as much as one with weight 1,
+# and a reading the detector itself isn't sure about counts for less.
+#
+# Why these numbers:
+# - Provenance signals (C2PA, file metadata, video container tags) are
+#   weighted highest. When present they are direct statements about where the
+#   file came from, not statistical guesses. A *signed* C2PA "made by AI" claim
+#   is even stronger and overrides the average altogether ("decisive").
+# - Pixel statistics (frequency, noise, ELA, temporal) are weighted low. They
+#   are real signals, but compression, resizing and editing all disturb them,
+#   and they produce false alarms on ordinary photos.
+# - Video frame checks combine several frames, so they are a little steadier
+#   than a single image check and get slightly more weight.
+
+[combine]
+# Total evidence (sum of weight * confidence over conclusive detectors) needed
+# before we give a verdict at all. Less than this = "Inconclusive".
+min_conclusive_weight = 1.0
+# Overall scores at or above ai_threshold read "Likely AI-generated", at or
+# below real_threshold "Likely real". Anything between is "Inconclusive":
+# a middle score isn't presented as meaningful.
+ai_threshold = 0.65
+real_threshold = 0.35
+
+[detectors.c2pa]
+enabled = true
+weight = 5.0
+
+[detectors.metadata]
+enabled = true
+weight = 3.0
+
+[detectors.frequency]
+enabled = true
+weight = 1.0
+# How far (in robust standard deviations) a spectral peak must stand out
+# before it counts as a repeating pattern.
+peak_z_weak = 12.0
+peak_z_strong = 25.0
+
+[detectors.noise]
+enabled = true
+weight = 1.0
+
+[detectors.ela]
+enabled = true
+weight = 0.5
+
+[detectors.video_frames]
+enabled = true
+weight = 1.5
+frames = 12
+
+[detectors.temporal]
+enabled = true
+weight = 1.0
+pairs = 8
+
+[detectors.video_container]
+enabled = true
+weight = 3.0
+
+[detectors.face_swap]
+# Off by default: no face-swap model ships with Mirage. To use it, put an ONNX
+# face-swap classifier at DEEPFAKE_MODEL_PATH (see .env.example), run
+# `python -m scripts.fetch_models` once for the face finder, then set this to true.
+enabled = false
+weight = 2.0
+frames = 8
+# YuNet face finder (MIT licence, from the OpenCV model zoo), downloaded by
+# scripts/fetch_models.py. Relative paths are relative to backend/.
+face_model = "models/face_detection_yunet_2023mar.onnx"
+input_size = 224
+# Index of the "fake" class in the model's output, and how to turn the raw
+# output into a probability ("softmax", "sigmoid" or "none").
+fake_index = 1
+activation = "softmax"
+mean = [0.485, 0.456, 0.406]
+std = [0.229, 0.224, 0.225]
+
+# Example of a future third-party detector (not built yet). Detectors that send
+# media off this machine stay OFF unless enabled here AND their key is in .env:
+#
+# [detectors.hive]
+# enabled = true
+# weight = 3.0

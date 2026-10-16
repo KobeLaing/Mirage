@@ -1,10 +1,16 @@
-"""Voting rules (FR-20..24, FR-52) and the vote/XP transaction (NFR-3).
+"""Voting and XP.
 
-- One vote per user per post (also enforced by uq_votes_user_post).
-- Same vote again: no change (idempotent).
-- Switching AI <-> REAL: XP unchanged.
-- First vote: +XP_PER_VOTE. Removing a vote: -XP_PER_VOTE. Removing nothing: no change.
-- The vote row and the XP change commit together or not at all.
+The rules:
+- One vote per user per post. The database enforces it too, with a unique
+  constraint, so even two simultaneous requests can't create two votes.
+- Voting the same way again changes nothing, so double-clicks are harmless.
+- Switching between AI and REAL moves your vote but doesn't change XP.
+- Your first vote on a post earns XP_PER_VOTE; removing it takes that XP back,
+  so voting and un-voting in a loop can't farm points.
+
+Votes and XP are saved in one transaction, so if either fails, neither is
+saved. This prevents users from getting XP for a vote that didn't count, or
+losing a vote without getting its XP back.
 """
 
 import logging
@@ -12,33 +18,38 @@ import logging
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.db.models import User
+from app.db.models import Post, User
 from app.errors import NotFound
 from app.progression import XP_PER_VOTE, rank_for_xp
 from app.repositories import post_repo, user_repo, vote_repo
 from app.schemas.votes import MyStanding, VoteCounts, VoteState
+from app.services.blind_mode import is_hidden
 
 log = logging.getLogger("mirage.votes")
 
 
-def _require_post(db: Session, post_id: int) -> None:
-    if post_repo.get(db, post_id) is None:
+def _require_post(db: Session, post_id: int) -> Post:
+    post = post_repo.get(db, post_id)
+    if post is None:
         raise NotFound("That post doesn't exist.")
+    return post
 
 
-def _state(db: Session, user_id: int, post_id: int) -> VoteState:
-    counts = post_repo.vote_counts(db, [post_id])[post_id]
-    xp = user_repo.current_xp(db, user_id)
-    return VoteState(
-        post_id=post_id,
-        my_vote=vote_repo.values_for_user(db, user_id, [post_id]).get(post_id),
-        votes=VoteCounts(ai=counts.get("AI", 0), real=counts.get("REAL", 0)),
-        me=MyStanding(xp=xp, rank=rank_for_xp(xp).key),
-    )
+def _state(db: Session, user: User, post: Post) -> VoteState:
+    my_vote = vote_repo.values_for_user(db, user.id, [post.id]).get(post.id)
+    xp = user_repo.current_xp(db, user.id)
+    # Blind Mode: removing your vote hides the counts again (they're only
+    # shown to people who have a vote on the post).
+    if is_hidden(user, post.author_id, my_vote):
+        votes = None
+    else:
+        counts = post_repo.vote_counts(db, [post.id])[post.id]
+        votes = VoteCounts(ai=counts.get("AI", 0), real=counts.get("REAL", 0))
+    return VoteState(post_id=post.id, my_vote=my_vote, votes=votes, me=MyStanding(xp=xp, rank=rank_for_xp(xp).key))
 
 
 def set_vote(db: Session, user: User, post_id: int, value: str) -> VoteState:
-    _require_post(db, post_id)
+    post = _require_post(db, post_id)
     for attempt in range(2):
         try:
             existing = vote_repo.get(db, user.id, post_id)
@@ -61,15 +72,15 @@ def set_vote(db: Session, user: User, post_id: int, value: str) -> VoteState:
             if attempt == 1:
                 raise
     log.info("vote.set", extra={"post_id": post_id, "value": value, "outcome": outcome})
-    return _state(db, user.id, post_id)
+    return _state(db, user, post)
 
 
 def remove_vote(db: Session, user: User, post_id: int) -> VoteState:
-    _require_post(db, post_id)
+    post = _require_post(db, post_id)
     existing = vote_repo.get(db, user.id, post_id)
     if existing is not None:
         vote_repo.delete(db, existing)
         user_repo.add_xp(db, user.id, -XP_PER_VOTE)
         db.commit()
         log.info("vote.removed", extra={"post_id": post_id})
-    return _state(db, user.id, post_id)
+    return _state(db, user, post)

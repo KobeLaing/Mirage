@@ -18,7 +18,7 @@ class MyStanding(StrictModel):
 class VoteState(StrictModel):
     post_id: int
     my_vote: VoteValue | None
-    votes: VoteCounts
+    votes: VoteCounts | None  # null when Blind Mode hides them (no vote on the post)
     me: MyStanding
 
 

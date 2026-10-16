@@ -16,7 +16,7 @@ def main() -> None:
     settings = get_settings()
     configure_logging(settings.log_level)
     settings.upload_dir.mkdir(parents=True, exist_ok=True)
-    upgrade_head(settings.database_url)
+    upgrade_head(settings.database_url, settings.upload_dir)
     uvicorn.run(
         "app.main:create_app",
         factory=True,

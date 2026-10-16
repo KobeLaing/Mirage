@@ -2,12 +2,30 @@ import { NextResponse, type NextRequest } from "next/server";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
+// Set by the API at login. Cookies are scoped by host, not port, so the API on
+// localhost:8000 and this app on localhost:3000 share it. (Use the same host
+// name for both: "localhost" and "127.0.0.1" are different cookie hosts.)
+const SESSION_COOKIE = "mirage_session";
+const LOGIN_PATH = "/login";
+
 /**
- * Per-request nonce-based Content-Security-Policy (SR-14).
- * Next.js reads the nonce from this header and attaches it to its own scripts,
- * so no inline script without the nonce can run.
+ * Runs before every page request and does two things:
+ *
+ * 1. Sign-in gate. Without a session cookie, every page except /login
+ *    redirects to /login before any page code is sent. This only checks that
+ *    the cookie exists: it can't verify the signature (that needs the API's
+ *    secret). The API verifies the session on every request, so a fake cookie
+ *    gets you an empty shell that can't load any data.
+ *
+ * 2. Per-request nonce-based Content-Security-Policy (SR-14). Next.js reads the
+ *    nonce from this header and attaches it to its own scripts, so no inline
+ *    script without the nonce can run.
  */
 export function proxy(request: NextRequest) {
+  if (request.nextUrl.pathname !== LOGIN_PATH && !request.cookies.has(SESSION_COOKIE)) {
+    return NextResponse.redirect(new URL(LOGIN_PATH, request.url));
+  }
+
   const nonce = Buffer.from(crypto.randomUUID()).toString("base64");
   const isDev = process.env.NODE_ENV === "development";
   const api = new URL(API_URL).origin;

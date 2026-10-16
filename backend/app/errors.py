@@ -37,11 +37,21 @@ class BadRequest(AppError):
 
 
 class Unauthorized(AppError):
-    status_code, code, message = 401, "unauthorized", "Choose an account to continue."
+    status_code, code, message = 401, "unauthorized", "Please sign in to continue."
+
+
+class InvalidCredentials(AppError):
+    # One message for every login failure (unknown user, wrong password, honeypot
+    # tripped), so a failed attempt never tells the caller which part was wrong.
+    status_code, code, message = 401, "invalid_credentials", "Invalid username or password"
 
 
 class Forbidden(AppError):
     status_code, code, message = 403, "forbidden", "You can't change something that isn't yours."
+
+
+class CsrfRejected(AppError):
+    status_code, code, message = 403, "csrf_failed", "This request was blocked. Refresh the page and try again."
 
 
 class NotFound(AppError):

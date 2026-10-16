@@ -10,11 +10,15 @@ from tests.conftest import KOBE, as_user
 
 
 def test_feed_is_newest_first(seeded_client):
-    items = seeded_client.get("/api/v1/posts").json()["items"]
-    assert len(items) == 6
+    items = seeded_client.get("/api/v1/posts", headers=as_user(KOBE)).json()["items"]
+    assert len(items) == 7
     times = [i["created_at"] for i in items]
     assert times == sorted(times, reverse=True)
-    assert items[0]["media"]["kind"] == "video" and items[-1]["media"]["kind"] == "image"
+    assert all(i["media"]["kind"] == "image" for i in items)
+
+
+def test_feed_requires_sign_in(seeded_client):
+    assert seeded_client.get("/api/v1/posts").status_code == 401
 
 
 def _bulk_posts(settings, count, same_time=False):
@@ -38,7 +42,7 @@ def test_cursor_pages_cover_everything_once(migrated, client, same_time):
     seen, cursor, pages = [], None, 0
     while True:
         params = {"limit": 5} | ({"cursor": cursor} if cursor else {})
-        page = client.get("/api/v1/posts", params=params).json()
+        page = client.get("/api/v1/posts", params=params, headers=as_user(KOBE)).json()
         seen += [p["id"] for p in page["items"]]
         pages += 1
         cursor = page["next_cursor"]
@@ -50,14 +54,14 @@ def test_cursor_pages_cover_everything_once(migrated, client, same_time):
 
 @pytest.mark.parametrize("cursor", ["garbage!!", "eyJ0IjogMX0", "e30", "a" * 199])
 def test_bad_cursor_is_400(seeded_client, cursor):
-    r = seeded_client.get("/api/v1/posts", params={"cursor": cursor})
+    r = seeded_client.get("/api/v1/posts", params={"cursor": cursor}, headers=as_user(KOBE))
     assert r.status_code == 400
     assert r.json()["error"]["code"] == "bad_request"
 
 
 def test_limit_is_bounded(seeded_client):
-    assert seeded_client.get("/api/v1/posts", params={"limit": 51}).status_code == 422
-    assert seeded_client.get("/api/v1/posts", params={"limit": 0}).status_code == 422
+    assert seeded_client.get("/api/v1/posts", params={"limit": 51}, headers=as_user(KOBE)).status_code == 422
+    assert seeded_client.get("/api/v1/posts", params={"limit": 0}, headers=as_user(KOBE)).status_code == 422
 
 
 def _count_queries(app, fn):
@@ -76,7 +80,8 @@ def _count_queries(app, fn):
 
 def test_feed_has_no_n_plus_one(migrated, app, client):
     _bulk_posts(migrated, 1)
-    small = _count_queries(app, lambda: client.get("/api/v1/posts", headers=as_user(KOBE)))
+    headers = as_user(KOBE)  # create the session before counting
+    small = _count_queries(app, lambda: client.get("/api/v1/posts", headers=headers))
     _bulk_posts(migrated, 0)
     engine = build_engine(migrated.database_url)
     with build_session_factory(engine)() as db:
@@ -85,7 +90,7 @@ def test_feed_has_no_n_plus_one(migrated, app, client):
                         mime_type="image/jpeg", created_at=utcnow()))
         db.commit()
     engine.dispose()
-    large = _count_queries(app, lambda: client.get("/api/v1/posts?limit=30", headers=as_user(KOBE)))
+    large = _count_queries(app, lambda: client.get("/api/v1/posts?limit=30", headers=headers))
     assert small == large
-    # identity lookup + posts(+authors) + vote counts + reaction counts + my votes + my reactions
-    assert large <= 6
+    # session + user lookup, posts(+authors), vote/reaction/comment counts, my votes, my reactions
+    assert large <= 8

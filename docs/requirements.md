@@ -5,7 +5,9 @@ security properties it must hold, and the ways we expect people to try to
 abuse it. Each requirement has an ID so the design, threat model, and tests
 can refer back to it.
 
-Status: **approved** (decisions recorded in §7).
+Status: **approved** (decisions recorded in §7). Updated for release 2:
+sign-in, honeypot, comments, leaderboard, Blind Mode, and the AI
+Authenticity Scanner (§2.9–2.12, SR-21–SR-32, AC-20–AC-30).
 
 ## 1. Product summary
 
@@ -14,9 +16,9 @@ are AI-generated, and the community votes on whether each post is **AI** or
 **Real**. Voting earns XP, XP earns verifier ranks, and ranks show as medals.
 
 Scope for this version: a local side project. It runs with one command per
-service (backend, frontend). It has no real authentication: a header account
-switcher picks one of two seeded users. The design must let real auth,
-object storage, and PostgreSQL drop in later without rewriting routes or
+service (backend, frontend). Users sign in with a username and password;
+every page except `/login` requires a signed-in user. The design must let
+object storage and PostgreSQL drop in later without rewriting routes or
 business logic.
 
 ## 2. Functional requirements
@@ -24,9 +26,9 @@ business logic.
 ### 2.1 Accounts and identity
 | ID | Requirement |
 |----|-------------|
-| FR-1 | Two seeded accounts exist: a Silver Verifier with 150 XP and a Gold Verifier with 600 XP. |
-| FR-2 | The header has an account switcher that lets the person at the keyboard act as either seeded user. |
-| FR-3 | The backend resolves the "current user" in exactly one dependency, so real auth can replace it without touching routes. |
+| FR-1 | Seeded accounts: Kobe Laing (`KobeLaing`, Silver, 150 XP), Kara Mercer (`KaraMercer`, Gold, 600 XP), and four community accounts (Altair, Josie, Terra, River). |
+| FR-2 | A login screen at `/login`. Every other page requires a signed-in user; the "Acting as" switcher is removed. The header shows the signed-in user and a **Sign out** button. |
+| FR-3 | The backend resolves the current user in exactly one dependency, from the authenticated session only. |
 | FR-4 | Each user has a display name, an avatar chosen from 10 original cartoon SVG avatars, XP, and a derived rank. |
 | FR-5 | A user can change their own avatar, and only their own. |
 
@@ -72,9 +74,9 @@ business logic.
 | ID | Requirement |
 |----|-------------|
 | FR-50 | Ranks, low to high, with XP thresholds: Bronze 0, Silver 100, Gold 300, Platinum 700, Palladium 1500. A user holds a rank at exactly its threshold (e.g. 100 XP = Silver, 99 XP = Bronze). |
-| FR-51 | +10 XP per vote cast. +25 XP per post created. |
+| FR-51 | +10 XP per vote cast. +20 XP per post created (was 25). Comments earn no XP. |
 | FR-52 | Removing a vote removes its 10 XP. Switching a vote (AI ↔ Real) is neutral: still one vote, still 10 XP. |
-| FR-53 | Deleting your own post removes its 25 XP. Other users keep the XP from their votes on it. |
+| FR-53 | Deleting your own post removes its 20 XP. Other users keep the XP from their votes on it. |
 | FR-54 | XP and rank values live in one backend config file. |
 | FR-55 | XP is computed only on the server. No endpoint accepts XP from the client. |
 | FR-56 | XP never goes below 0. |
@@ -90,18 +92,52 @@ business logic.
 ### 2.8 Seed data
 | ID | Requirement |
 |----|-------------|
-| FR-70 | A seed script creates the two accounts and six caption-less posts, and copies media from `/seed-media` into backend upload storage. |
-| FR-71 | Images: `aiphote1.jpg` (AI), `Phoenix_Sun.jpg` (AI), `sandy-hook.png` (REAL). Videos (placeholders, replaced later): `ai-video-1.mp4` (AI), `ai-video-2.mp4` (AI), `real-video-1.mp4` (REAL). |
+| FR-70 | A seed script creates the six accounts, seven caption-less image posts and their votes, and copies media from `/seed-media` into upload storage. Passwords come from `SEED_*_PASSWORD` environment variables, never source code. |
+| FR-71 | Images: `aiphote1.jpg` (AI), `Phoenix_Sun.jpg` (AI), `sandy-hook.png` (REAL); `AIoasis.jpg` (AI, by Altair: 3 AI / 1 Real votes), `bluehummingbird.jpg` (AI, by Josie: 2 AI / 1 Real), `realpainting3.jpg` (REAL, by Terra: 3 Real), `realpainting4.jpg` (REAL, by River: 3 Real). The three seeded videos were removed (migration 0003 deletes them from existing databases by exact file hash); users can still upload videos. |
 | FR-72 | Each seeded post stores `ground_truth` as a hidden field. It is never displayed and never returned by the public API. |
 | FR-73 | The seed script is safe to re-run (it resets to a known state rather than duplicating data). |
 | FR-74 | Seeded media goes through the same validation and metadata stripping as user uploads. If a file is missing, that post is skipped with a clear warning. |
+
+### 2.9 Sign-in
+| ID | Requirement |
+|----|-------------|
+| FR-80 | Sign in with username (case-insensitive) and password; sign out from the header. |
+| FR-81 | Every login failure shows one message: "Invalid username or password". |
+| FR-82 | The login form has a honeypot field (`website`) that people never see; any value is rejected like a wrong password. |
+
+### 2.10 Comments
+| ID | Requirement |
+|----|-------------|
+| FR-90 | Signed-in users can comment on every post, in the feed and on profiles. |
+| FR-91 | Comments show the commenter's avatar, name and badge, oldest first (newest last). |
+| FR-92 | Users can delete only their own comments (checked on the server). |
+| FR-93 | Comments are ≤ 500 characters, rendered as plain text, rate-limited per user, and earn no XP. |
+
+### 2.11 Left side pane (feed and profile)
+| ID | Requirement |
+|----|-------------|
+| FR-100 | **Leaderboard** (first): position, name, verifier status and badge, sorted by XP; top 50; the signed-in user's row highlighted. |
+| FR-101 | **Blind Mode** toggle. Turning it on asks "Enter Blind Mode? Vote counts and comments will be hidden until you vote on each post." Only "Yes" turns it on. |
+| FR-102 | In Blind Mode, an unvoted post shows only its media and the AI/Real buttons (no counts, result bar, reactions, caption or comments). After voting, they appear. Your own posts are never hidden. |
+| FR-103 | Blind Mode is enforced by the API and saved per user on the server, so it follows the user across devices. |
+| FR-104 | **AI Authenticity Scanner** (see §2.12). |
+
+### 2.12 AI Authenticity Scanner
+| ID | Requirement |
+|----|-------------|
+| FR-110 | Users upload an image or video privately (never posted) and get an AI probability 0–100% with a per-signal breakdown. |
+| FR-111 | Every result shows: "This score is an estimate, not proof. Detectors can be wrong, especially on compressed or edited media." |
+| FR-112 | If no signal is conclusive, the result says "Inconclusive" and shows no score. |
+| FR-113 | Image detectors: C2PA, metadata, FFT, noise residual, ELA. Video detectors: frame sampling (FFT + noise), optical-flow temporal consistency, face-swap (optional model), container metadata + C2PA. |
+| FR-114 | Signals are combined with weights from `backend/app/scanner/scanner.toml`. |
+| FR-115 | Each detector is a module behind one `Detector` interface, registered in one place and switched by a config flag, so a new detector needs only a module, a config entry, and (if remote) an API key in `.env`. |
 
 ## 3. Non-functional requirements (system design)
 
 | ID | Requirement |
 |----|-------------|
 | NFR-1 | **Layering.** Routes (HTTP only) → services (business rules) → repositories (all DB access). No business logic in routes, no SQL outside repositories. |
-| NFR-2 | **Stateless API.** No server-side session state. Versioned under `/api/v1`. |
+| NFR-2 | **No in-process state.** Sessions live in the database (not process memory), so any API process can serve any user. Versioned under `/api/v1`. |
 | NFR-3 | **Data integrity in the DB.** Unique `(user_id, post_id)` on votes and on reactions; foreign keys everywhere; check constraints on enums and XP ≥ 0. A vote and its XP change commit in one transaction. |
 | NFR-4 | **Feed performance.** Cursor pagination on `(created_at, id)` descending with a matching index. Counts loaded with aggregate queries, not one query per post. |
 | NFR-5 | **Media abstraction.** A small storage interface with a local-disk implementation, swappable for object storage. |
@@ -135,6 +171,18 @@ business logic.
 | SR-18 | **Dependencies.** Pinned versions, only real and maintained packages, each justified. pip-audit and npm audit in CI. Dependabot for pip and npm. |
 | SR-19 | **CI with least privilege.** GitHub Actions workflow with `permissions: contents: read`. |
 | SR-20 | **Server-owned XP.** No API field accepts XP, rank, counts, or ground truth from the client (Pydantic models forbid extra fields). |
+| SR-21 | **Password storage.** Argon2id hashes only; plaintext is never stored or logged. Seed passwords come only from environment variables. |
+| SR-22 | **Sessions.** A signed (itsdangerous, `SESSION_SECRET`), short-lived (4 h) token in an `HttpOnly; Secure; SameSite=Lax` cookie; the DB stores only its hash. The API refuses to start without a ≥ 32-character `SESSION_SECRET`. Logout revokes the session server-side. |
+| SR-23 | **CSRF.** Every state-changing request must carry a matching `Origin` and an `X-CSRF-Token` (HMAC of the session cookie). |
+| SR-24 | **Login protection.** Rate limits per IP and per username; one generic error; failed attempts logged without the password; constant-time handling of unknown usernames. |
+| SR-25 | **Honeypot.** Checked on the server; a filled honeypot gets the generic error and an `auth.suspected_bot` log entry. |
+| SR-26 | **Comment safety.** Plain-text rendering, length and control-character validation, per-user rate limit, server-side ownership check on delete. |
+| SR-27 | **Blind Mode on the server.** Hidden values are never sent (null), and the comments/reactions endpoints refuse unvoted posts. |
+| SR-28 | **Scanner upload validation.** Same type sniffing, size limits and decode checks as posts. |
+| SR-29 | **Scanner privacy.** Scanned files are deleted when the scan ends (even on error) and are never stored or posted. |
+| SR-30 | **Local detection.** No upload is sent to a third party. C2PA remote-manifest fetching is disabled. Future off-device detectors are off by default and fail safe without an API key. |
+| SR-31 | **Scanner rate limit** per user (20 scans/hour, configurable). |
+| SR-32 | **Safe migrations.** Every schema change is an Alembic migration that preserves existing data. |
 
 ## 5. Abuse cases
 
@@ -146,7 +194,7 @@ business logic.
 | AC-4 | **XP farming by posting** | Post, delete, repost for +25 each time; or spam uploads. | Deleting a post removes its XP (FR-53); post rate limit (SR-12). Gap: no duplicate-media detection. |
 | AC-5 | **Client-supplied XP** | Add `"xp": 99999` to a request body. | No endpoint accepts XP; Pydantic `extra="forbid"` (SR-20); XP only changes inside services (FR-55). |
 | AC-6 | **Acting as another user** | Put another user's ID in a body or URL to vote, react, delete, or change avatar on their behalf. | Writes use only the resolved current user (SR-11); avatar endpoint is `/me/avatar`; post deletion checks ownership (403). |
-| AC-7 | **Impersonation via the dev identity header** | Set `X-User-Id` to any user. | Accepted risk while there is no real auth: the switcher *is* impersonation by design. Contained to one dependency (FR-3). Known gap #1. |
+| AC-7 | **Impersonation via a forged identity** | Send `X-User-Id`, or forge or replay a session cookie. | The header is ignored; cookies are signed, expire, and are checked against the sessions table (SR-22). |
 | AC-8 | **Malicious upload: HTML/SVG/script** | Upload `evil.html` renamed `cat.jpg`, or an SVG with script, hoping it is served and executed on the app's origin. | Magic-byte detection (SR-2); SVG not allow-listed (SR-1); `nosniff` + forced `Content-Type` + sandboxing CSP on media (SR-6). |
 | AC-9 | **Malicious upload: polyglot / parser exploit** | A file that is both a valid JPEG and something else, or a crafted image targeting the decoder. | Images re-encoded (SR-7), which drops trailing payloads; Pillow decompression-bomb limit; pinned, audited Pillow (SR-18). Gap: videos are not transcoded. |
 | AC-10 | **Path traversal** | Filename `../../app/main.py`, or a media URL containing `..`. | Original filename never used (SR-4); media keys validated against a strict pattern before touching disk. |
@@ -154,15 +202,27 @@ business logic.
 | AC-12 | **Ground-truth leak** | Read API responses, error messages, or the frontend bundle to learn which posts are AI. | Response schemas never include the field (SR-17); a test asserts it is absent from every endpoint; frontend has no knowledge of it. |
 | AC-13 | **Stored XSS via caption** | Caption `<img src=x onerror=...>`. | Captions rendered as text (SR-10); frontend CSP (SR-14). |
 | AC-14 | **SQL injection** | Inject through cursor, caption, or path params. | Parameterized SQLAlchemy only (SR-9); cursor decoded and validated as typed data. |
-| AC-15 | **Cross-origin abuse** | A malicious site makes the user's browser call the API. | CORS restricted (SR-13). With no cookies there is no ambient credential to ride; when real auth arrives, use bearer tokens or SameSite cookies + CSRF protection. |
+| AC-15 | **Cross-site request forgery** | A malicious site makes the signed-in user's browser vote, comment or delete. | SameSite=Lax cookie, Origin check and CSRF token (SR-23); CORS restricted (SR-13). |
 | AC-16 | **Clickjacking** | Frame the app to trick a user into voting. | `X-Frame-Options: DENY` / `frame-ancestors 'none'` (SR-14). |
 | AC-17 | **Information disclosure via errors** | Trigger exceptions to read stack traces, file paths, or SQL. | Generic 500 body with request ID (SR-16). |
-| AC-18 | **Rate-limit evasion via user switching** | Switch identities to reset per-user limits. | Accepted for now (two seeded users, dev feature). Real auth closes this; a per-IP backstop is a noted seam. |
-| AC-19 | **Supply-chain attack** | Typosquatted or compromised package. | Minimal, pinned, justified deps; lockfiles; pip-audit, npm audit, Dependabot (SR-18). |
+| AC-18 | **Rate-limit evasion** | Use several accounts to reset per-user limits. | Accounts can't be created by users; login is limited per IP and per username. |
+| AC-19 | **Supply-chain attack** | Typosquatted or compromised package or model. | Minimal, pinned, justified deps; lockfiles; pip-audit, npm audit, Dependabot (SR-18); the downloaded face model is SHA-256-pinned. |
+| AC-20 | **Password brute force / credential stuffing** | Try many passwords against one account or many accounts. | Per-username and per-IP limits; Argon2id (SR-21, SR-24). |
+| AC-21 | **Username enumeration** | Compare error messages or timings. | Identical errors and dummy-hash timing (SR-24). |
+| AC-22 | **Login bots** | Scripts that fill every field. | Honeypot (SR-25) plus rate limits. |
+| AC-23 | **Session theft via XSS** | Read the cookie from script. | `HttpOnly` cookie; nonce CSP (SR-14, SR-22). |
+| AC-24 | **Comment spam / XP farming via comments** | Post many comments. | Rate limit; comments earn no XP (FR-93). |
+| AC-25 | **Stored XSS via comment** | `<script>` in a comment. | Plain-text rendering (SR-26). |
+| AC-26 | **Deleting someone else's comment** | Call DELETE with another comment id. | Server checks ownership → 403 (FR-92). |
+| AC-27 | **Blind Mode peeking** | Read counts or comments in developer tools or via direct API calls. | Server never sends them (SR-27). |
+| AC-28 | **SSRF through the scanner** | Upload a file whose C2PA manifest points to an internal URL. | Remote fetching disabled; only embedded manifests are read (SR-30). |
+| AC-29 | **Scanner as a CPU sink** | Upload many large videos. | Frame-sampled analysis, crops and caps; per-user scan rate limit; size limits (SR-28, SR-31). |
+| AC-30 | **Scanner as storage or exfiltration** | Use the scanner to host files, or route them to a third party. | Files are deleted after the scan and never served; off-device detectors are off by default (SR-29, SR-30). |
 
 ## 6. Assumptions and out of scope
 
-- **No real authentication.** Identity is a trusted `X-User-Id` header set by the switcher. Must be replaced before any public deployment.
+- **No account lifecycle.** No sign-up, password change or reset; accounts come from the seed script.
+- **Scanner accuracy is limited.** Pixel-statistics detectors are heuristics; only C2PA and metadata are strong. The face-swap detector ships without a model.
 - **No content moderation.** No reporting, takedown, or review of uploads. Must be added before any public deployment.
 - **Single instance.** The rate limiter is in-process memory, behind an interface so a shared store can replace it for multiple instances.
 - **Videos are validated but not transcoded,** so their metadata is not stripped (that needs ffmpeg, a large system dependency). Listed gap.
@@ -172,6 +232,7 @@ business logic.
 ## 7. Decisions (resolved at Phase 1 approval)
 
 1. **Reactions:** one reaction per user per post; the user can change or remove it. DB unique `(user_id, post_id)`.
-2. **Post deletion:** included, owner only. Deleting removes the author's +25 XP; voters keep their vote XP.
+2. **Post deletion:** included, owner only. Deleting removes the author's post XP (now 20); voters keep their vote XP.
 3. **Limits:** images 10 MB, videos 50 MB; 10 posts/hour, 120 votes/min, 120 reactions/min; caption ≤ 500 chars; types JPEG, PNG, GIF, MP4 (WebP and WebM removed after Phase 5).
 4. **Location:** project lives at `C:\Users\thela\Projects\Mirage` (Documents is protected by Controlled Folder Access).
+5. **Release 2 (2026-10-16):** Blind Mode also hides the caption and reaction counts; your own posts are never hidden. The face-swap detector is built but ships without a model (off by default).

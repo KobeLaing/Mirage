@@ -126,3 +126,49 @@ export function CloseIcon(props: IconProps) {
     </svg>
   );
 }
+
+/** Comments: a speech bubble. */
+export function CommentIcon(props: IconProps) {
+  return (
+    <svg {...svgProps(props)}>
+      {props.title && <title>{props.title}</title>}
+      <path d="M4 5.5h16a1.5 1.5 0 0 1 1.5 1.5v9a1.5 1.5 0 0 1-1.5 1.5H10l-4.5 3.5V17.5H4A1.5 1.5 0 0 1 2.5 16V7A1.5 1.5 0 0 1 4 5.5z" />
+    </svg>
+  );
+}
+
+/** Leaderboard: a trophy cup. */
+export function TrophyIcon(props: IconProps) {
+  return (
+    <svg {...svgProps(props)}>
+      {props.title && <title>{props.title}</title>}
+      <path d="M7 4h10v5a5 5 0 0 1-10 0V4z" />
+      <path d="M7 6H4.5v1.5A3.5 3.5 0 0 0 8 11M17 6h2.5v1.5A3.5 3.5 0 0 1 16 11" />
+      <path d="M12 14v3.5M8.5 20.5h7M9.5 20.5l.8-3h3.4l.8 3" />
+    </svg>
+  );
+}
+
+/** Blind Mode: an eye with a slash through it. */
+export function EyeOffIcon(props: IconProps) {
+  return (
+    <svg {...svgProps(props)}>
+      {props.title && <title>{props.title}</title>}
+      <path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z" />
+      <circle cx="12" cy="12" r="3" />
+      <path d="M4 20L20 4" />
+    </svg>
+  );
+}
+
+/** Scanner: a magnifier over a frame. */
+export function ScanIcon(props: IconProps) {
+  return (
+    <svg {...svgProps(props)}>
+      {props.title && <title>{props.title}</title>}
+      <path d="M3 8V5a2 2 0 0 1 2-2h3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M8 21H5a2 2 0 0 1-2-2v-3" />
+      <circle cx="11" cy="11" r="4" />
+      <path d="M14 14l3 3" />
+    </svg>
+  );
+}

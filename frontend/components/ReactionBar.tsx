@@ -3,7 +3,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 
 import { api, errorMessage } from "@/lib/api";
-import { useCurrentUser } from "@/lib/currentUser";
+import { useAuth } from "@/lib/auth";
 import type { ReactionCounts, ReactionKind } from "@/lib/types";
 import { HeartIcon, LaughIcon, LikeIcon, SmileOutlineIcon } from "./icons";
 
@@ -27,7 +27,7 @@ interface ReactionBarProps {
  * tray of reactions appears on hover, on keyboard focus, or on a touch long-press.
  */
 export function ReactionBar({ postId, reactions: initial, myReaction: initialMine }: ReactionBarProps) {
-  const { userId } = useCurrentUser();
+  const { userId } = useAuth();
   const [counts, setCounts] = useState(initial);
   const [mine, setMine] = useState(initialMine);
   const [open, setOpen] = useState(false);
@@ -60,7 +60,7 @@ export function ReactionBar({ postId, reactions: initial, myReaction: initialMin
     const target = mine === kind ? null : kind;
     setError(null);
     try {
-      const state = target ? await api.react(userId, postId, target) : await api.unreact(userId, postId);
+      const state = target ? await api.react(postId, target) : await api.unreact(postId);
       setCounts(state.reactions);
       setMine(state.my_reaction);
       setOpen(false);

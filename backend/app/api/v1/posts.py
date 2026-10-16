@@ -2,7 +2,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, File, Form, Query, Response, UploadFile, status
 
-from app.api.deps import DB, CurrentUser, Limits, OptionalUser, Storage, rate_limit
+from app.api.deps import DB, CurrentUser, Limits, Storage, rate_limit
 from app.schemas.common import ErrorResponse
 from app.schemas.posts import CAPTION_PATTERN, MAX_CAPTION_CHARS, FeedPage, PostOut
 from app.services import post_service
@@ -16,11 +16,11 @@ ERRORS = {code: {"model": ErrorResponse} for code in (400, 401, 403, 404, 413, 4
 def list_posts(
     db: DB,
     storage: Storage,
-    viewer: OptionalUser,
+    viewer: CurrentUser,
     cursor: Annotated[str | None, Query(max_length=200)] = None,
     limit: Annotated[int, Query(ge=1, le=post_service.MAX_PAGE_SIZE)] = 20,
 ) -> FeedPage:
-    return post_service.list_feed(db, storage, viewer.id if viewer else None, cursor, limit)
+    return post_service.list_feed(db, storage, viewer, cursor, limit)
 
 
 @router.post(
@@ -40,8 +40,8 @@ def create_post(
 
 
 @router.get("/{post_id}", response_model=PostOut, responses=ERRORS)
-def get_post(post_id: int, db: DB, storage: Storage, viewer: OptionalUser) -> PostOut:
-    return post_service.get_post(db, storage, post_id, viewer.id if viewer else None)
+def get_post(post_id: int, db: DB, storage: Storage, viewer: CurrentUser) -> PostOut:
+    return post_service.get_post(db, storage, post_id, viewer)
 
 
 @router.delete("/{post_id}", status_code=status.HTTP_204_NO_CONTENT, responses=ERRORS)

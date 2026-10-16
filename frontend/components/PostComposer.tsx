@@ -3,26 +3,15 @@
 import { useEffect, useId, useRef, useState } from "react";
 
 import { api, errorMessage } from "@/lib/api";
-import { useCurrentUser } from "@/lib/currentUser";
+import { useAuth } from "@/lib/auth";
 import type { Post } from "@/lib/types";
+import { ACCEPT, precheck } from "@/lib/upload";
 import { CloseIcon, UploadIcon } from "./icons";
 
-// Client-side checks are only for quick feedback. The server re-checks
-// everything from the file's actual bytes (SR-1..3).
-const ACCEPT = "image/jpeg,image/png,image/gif,video/mp4";
-const MAX_IMAGE = 10 * 1024 * 1024;
-const MAX_VIDEO = 50 * 1024 * 1024;
 const MAX_CAPTION = 500;
 
-function precheck(file: File): string | null {
-  if (!ACCEPT.split(",").includes(file.type)) return "Choose a JPEG, PNG or GIF image, or an MP4 video.";
-  const isVideo = file.type.startsWith("video/");
-  if (file.size > (isVideo ? MAX_VIDEO : MAX_IMAGE)) return `That file is over ${isVideo ? 50 : 10} MB.`;
-  return null;
-}
-
 export function PostComposer({ onCreated }: { onCreated?: (post: Post) => void }) {
-  const { userId, refreshMe } = useCurrentUser();
+  const { userId, refreshMe } = useAuth();
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [caption, setCaption] = useState("");
@@ -63,10 +52,10 @@ export function PostComposer({ onCreated }: { onCreated?: (post: Post) => void }
     setBusy(true);
     setError(null);
     try {
-      const post = await api.createPost(userId, file, caption);
+      const post = await api.createPost(file, caption);
       reset();
       onCreated?.(post);
-      refreshMe().catch(() => undefined); // +25 XP
+      refreshMe().catch(() => undefined); // creating a post earns XP
     } catch (err) {
       setError(errorMessage(err));
     } finally {

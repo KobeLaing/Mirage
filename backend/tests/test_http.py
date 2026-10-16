@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter
 
-from tests.conftest import KOBE, as_user
+from tests.conftest import FRONTEND_ORIGIN, KOBE, as_user
 
 
 def test_health(client):
@@ -32,9 +32,11 @@ def test_cors_allows_only_frontend_origin(client):
     ok = client.options(
         "/api/v1/posts",
         headers={"Origin": "http://localhost:3000", "Access-Control-Request-Method": "POST",
-                 "Access-Control-Request-Headers": "x-user-id"},
+                 "Access-Control-Request-Headers": "x-csrf-token"},
     )
     assert ok.headers.get("access-control-allow-origin") == "http://localhost:3000"
+    # Credentials (the session cookie) are allowed, but only for that one exact origin.
+    assert ok.headers.get("access-control-allow-credentials") == "true"
 
     evil = client.options(
         "/api/v1/posts",
@@ -64,21 +66,27 @@ def test_unhandled_error_hides_internals(app, client):
 
 
 def test_validation_errors_do_not_echo_input(seeded_client):
-    r = seeded_client.get("/api/v1/posts", params={"limit": "<script>alert(1)</script>"})
+    r = seeded_client.get("/api/v1/posts", params={"limit": "<script>alert(1)</script>"}, headers=as_user(KOBE))
     assert r.status_code == 422
     assert "<script>" not in r.text
 
 
-def test_unknown_or_malformed_user_header_is_401(seeded_client):
-    for value in ("999", "abc", "1 OR 1=1", "-1", "１".encode(), "9" * 40):
-        r = seeded_client.get("/api/v1/me", headers={"X-User-Id": value})
+def test_forged_or_malformed_session_cookie_is_401(seeded_client):
+    for value in ("", "garbage", "1", "eyJ1c2VyX2lkIjoxfQ.forged.signature", "x" * 4000):
+        r = seeded_client.get("/api/v1/me", headers={"Cookie": f"mirage_session={value}"})
         assert r.status_code == 401, value
 
 
-def test_missing_user_header_is_401_for_writes_but_reads_are_open(seeded_client):
-    assert seeded_client.get("/api/v1/me").status_code == 401
-    assert seeded_client.get("/api/v1/posts").status_code == 200
+def test_old_dev_identity_header_is_ignored(seeded_client):
+    """X-User-Id used to pick the account. It must have no effect any more."""
+    assert seeded_client.get("/api/v1/me", headers={"X-User-Id": str(KOBE)}).status_code == 401
 
+
+def test_reads_and_writes_both_require_sign_in(seeded_client):
+    assert seeded_client.get("/api/v1/me").status_code == 401
+    assert seeded_client.get("/api/v1/posts").status_code == 401
+    r = seeded_client.put("/api/v1/posts/1/vote", json={"value": "AI"}, headers={"Origin": FRONTEND_ORIGIN})
+    assert r.status_code == 401
 
 def test_request_id_is_echoed_when_valid(client):
     rid = "0123456789abcdef0123456789abcdef"
@@ -87,11 +95,13 @@ def test_request_id_is_echoed_when_valid(client):
     assert other != "<bad id>"
 
 
-def test_production_refuses_dev_header_identity():
+def test_settings_refuse_missing_or_weak_session_secret():
     import pytest
     from pydantic import ValidationError
 
     from app.config import Settings
 
     with pytest.raises(ValidationError):
-        Settings(_env_file=None, environment="production", auth_mode="dev_header")
+        Settings(_env_file=None)  # no SESSION_SECRET at all
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, session_secret="too-short")

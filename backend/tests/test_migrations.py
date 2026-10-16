@@ -41,6 +41,80 @@ def test_downgrade_then_upgrade(migrated):
     command.upgrade(cfg, "head")
 
 
+def test_migrations_never_lose_existing_data(settings):
+    """Regression: on SQLite, a migration that rebuilds `users` used to cascade-
+    delete every post and vote. Data from the first schema must survive every
+    upgrade and every downgrade."""
+    import sqlalchemy as sa
+
+    from app.db.base import utcnow
+
+    cfg = alembic_config(settings.database_url, settings.upload_dir)
+    command.upgrade(cfg, "0001")
+    users = sa.table("users", *(sa.column(c) for c in ("id", "handle", "display_name", "avatar_id", "xp", "created_at")))
+    posts = sa.table("posts", *(sa.column(c) for c in ("id", "author_id", "media_key", "media_kind", "mime_type", "created_at")))
+    votes = sa.table("votes", *(sa.column(c) for c in ("user_id", "post_id", "value", "created_at", "updated_at")))
+    engine = build_engine(settings.database_url)
+    with engine.begin() as conn:
+        conn.execute(sa.insert(users).values(id=1, handle="u1", display_name="u1", avatar_id=1, xp=10, created_at=utcnow()))
+        conn.execute(sa.insert(posts).values(
+            id=1, author_id=1, media_key="c" * 32 + ".jpg", media_kind="image", mime_type="image/jpeg", created_at=utcnow()
+        ))
+        conn.execute(sa.insert(votes).values(user_id=1, post_id=1, value="AI", created_at=utcnow(), updated_at=utcnow()))
+
+    def counts():
+        with engine.connect() as conn:
+            return tuple(conn.execute(sa.select(sa.func.count()).select_from(t)).scalar() for t in (users, posts, votes))
+
+    command.upgrade(cfg, "head")
+    assert counts() == (1, 1, 1)
+    command.downgrade(cfg, "0001")
+    assert counts() == (1, 1, 1)
+    engine.dispose()
+
+
+def test_0003_removes_only_the_seed_videos(settings, tmp_path):
+    """Old databases lose the seeded videos; a user's own video upload stays."""
+    import shutil
+
+    from sqlalchemy import select
+
+    from app.db.session import build_session_factory
+    from tests.conftest import SEED_MEDIA
+
+    cfg = alembic_config(settings.database_url, settings.upload_dir)
+    command.upgrade(cfg, "0002")  # the state before the cleanup migration
+    settings.upload_dir.mkdir(parents=True, exist_ok=True)
+    seed_key, user_key = "a" * 32 + ".mp4", "b" * 32 + ".mp4"
+    shutil.copy(SEED_MEDIA / "ai-video-1.mp4", settings.upload_dir / seed_key)
+    user_video = (SEED_MEDIA / "real-video-1.mp4").read_bytes() + b"\x00"  # different bytes, same format
+    (settings.upload_dir / user_key).write_bytes(user_video)
+
+    # Core inserts with only the columns that exist at revision 0002 (the ORM
+    # models describe the latest schema, which has more columns).
+    import sqlalchemy as sa
+
+    from app.db.base import utcnow
+
+    users = sa.table("users", *(sa.column(c) for c in ("id", "handle", "display_name", "avatar_id", "xp", "created_at")))
+    posts = sa.table("posts", *(sa.column(c) for c in ("author_id", "media_key", "media_kind", "mime_type", "created_at")))
+    engine = build_engine(settings.database_url)
+    with engine.begin() as conn:
+        conn.execute(sa.insert(users).values(id=1, handle="u1", display_name="u1", avatar_id=1, xp=0, created_at=utcnow()))
+        for key in (seed_key, user_key):
+            conn.execute(sa.insert(posts).values(
+                author_id=1, media_key=key, media_kind="video", mime_type="video/mp4", created_at=utcnow()
+            ))
+
+    command.upgrade(cfg, "head")
+
+    with build_session_factory(engine)() as db:
+        assert list(db.scalars(select(Post.media_key))) == [user_key]
+    engine.dispose()
+    assert not (settings.upload_dir / seed_key).exists()
+    assert (settings.upload_dir / user_key).exists()
+
+
 def _user(db, handle="u1", xp=0):
     user = User(handle=handle, display_name=handle, avatar_id=1, xp=xp)
     db.add(user)

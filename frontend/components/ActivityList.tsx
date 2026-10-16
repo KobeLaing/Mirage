@@ -15,6 +15,10 @@ function ActivityLabel({ item }: { item: ActivityItem }) {
       </span>
     );
   }
+  if (item.vote === null) {
+    // Blind Mode withholds how this person voted until you vote yourself.
+    return <span className="rounded-full bg-navy-700 px-2.5 py-1 text-xs font-bold text-muted">Voted</span>;
+  }
   const isAI = item.vote === "AI";
   return (
     <span

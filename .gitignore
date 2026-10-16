@@ -9,6 +9,7 @@ __pycache__/
 .venv/
 .pytest_cache/
 backend/var/
+backend/models/
 
 # Node / Next.js
 node_modules/

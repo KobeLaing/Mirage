@@ -31,5 +31,13 @@ class Profile(StrictModel):
     progress: float
 
 
+class BlindModeUpdate(StrictModel):
+    enabled: bool
+
+
+class BlindModeState(StrictModel):
+    blind_mode: bool
+
+
 class AvatarUpdate(StrictModel):
     avatar_id: Annotated[int, Field(ge=1, le=AVATAR_COUNT)]

@@ -36,10 +36,13 @@ class PostOut(StrictModel):
     author: UserSummary
     caption: str | None
     media: MediaOut
-    votes: VoteCounts
-    reactions: ReactionCounts
+    # null when Blind Mode hides them (blind=true): the viewer hasn't voted yet.
+    votes: VoteCounts | None
+    reactions: ReactionCounts | None
     my_vote: VoteValue | None
     my_reaction: ReactionKind | None
+    comment_count: int | None
+    blind: bool
     created_at: datetime
 
 

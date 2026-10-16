@@ -6,7 +6,7 @@ from datetime import datetime
 
 from sqlalchemy.orm import Session
 
-from app.db.models import Post
+from app.db.models import Post, User
 from app.errors import NotFound
 from app.repositories import post_repo, user_repo, vote_repo
 from app.schemas.posts import Activity, ActivityItem
@@ -24,7 +24,7 @@ class _Entry:
     vote: str | None
 
 
-def recent(db: Session, storage: MediaStorage, user_id: int, viewer_id: int | None, limit: int) -> Activity:
+def recent(db: Session, storage: MediaStorage, user_id: int, viewer: User, limit: int) -> Activity:
     if user_repo.get(db, user_id) is None:
         raise NotFound("That user doesn't exist.")
     limit = max(1, min(limit, MAX_ITEMS))
@@ -41,7 +41,12 @@ def recent(db: Session, storage: MediaStorage, user_id: int, viewer_id: int | No
     entries.sort(key=lambda e: (e.at, e.post.id), reverse=True)
     entries = entries[:limit]
 
-    views = {view.id: view for view in post_views.build(db, storage, [e.post for e in entries], viewer_id)}
+    views = {view.id: view for view in post_views.build(db, storage, [e.post for e in entries], viewer)}
+    # In Blind Mode, how the profile owner voted is also an opinion on the post,
+    # so it's withheld for posts the viewer hasn't voted on yet.
     return Activity(
-        items=[ActivityItem(type=e.type, at=e.at, post=views[e.post.id], vote=e.vote) for e in entries]
+        items=[
+            ActivityItem(type=e.type, at=e.at, post=views[e.post.id], vote=None if views[e.post.id].blind else e.vote)
+            for e in entries
+        ]
     )

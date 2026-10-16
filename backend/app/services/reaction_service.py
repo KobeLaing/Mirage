@@ -6,17 +6,23 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.db.models import User
-from app.errors import NotFound
-from app.repositories import post_repo, reaction_repo
+from app.errors import Forbidden, NotFound
+from app.repositories import post_repo, reaction_repo, vote_repo
 from app.schemas.posts import ReactionCounts
 from app.schemas.votes import ReactionState
+from app.services.blind_mode import HIDDEN_MESSAGE, is_hidden
 
 log = logging.getLogger("mirage.reactions")
 
 
-def _require_post(db: Session, post_id: int) -> None:
-    if post_repo.get(db, post_id) is None:
+def _require_visible_post(db: Session, user: User, post_id: int) -> None:
+    post = post_repo.get(db, post_id)
+    if post is None:
         raise NotFound("That post doesn't exist.")
+    # Reaction responses include everyone's reaction counts, so Blind Mode
+    # blocks reacting until the user has voted.
+    if is_hidden(user, post.author_id, vote_repo.values_for_user(db, user.id, [post_id]).get(post_id)):
+        raise Forbidden(HIDDEN_MESSAGE)
 
 
 def _state(db: Session, user_id: int, post_id: int) -> ReactionState:
@@ -29,7 +35,7 @@ def _state(db: Session, user_id: int, post_id: int) -> ReactionState:
 
 
 def set_reaction(db: Session, user: User, post_id: int, kind: str) -> ReactionState:
-    _require_post(db, post_id)
+    _require_visible_post(db, user, post_id)
     for attempt in range(2):
         try:
             existing = reaction_repo.get(db, user.id, post_id)
@@ -48,7 +54,7 @@ def set_reaction(db: Session, user: User, post_id: int, kind: str) -> ReactionSt
 
 
 def remove_reaction(db: Session, user: User, post_id: int) -> ReactionState:
-    _require_post(db, post_id)
+    _require_visible_post(db, user, post_id)
     existing = reaction_repo.get(db, user.id, post_id)
     if existing is not None:
         reaction_repo.delete(db, existing)

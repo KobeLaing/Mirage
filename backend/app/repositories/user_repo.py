@@ -1,4 +1,4 @@
-from sqlalchemy import case, select, update
+from sqlalchemy import case, func, select, update
 from sqlalchemy.orm import Session
 
 from app.db.models import User
@@ -8,12 +8,20 @@ def get(db: Session, user_id: int) -> User | None:
     return db.get(User, user_id)
 
 
-def list_all(db: Session) -> list[User]:
-    return list(db.scalars(select(User).order_by(User.id)))
+def get_by_username(db: Session, username: str) -> User | None:
+    """Usernames are matched case-insensitively, so "kobelaing" finds "KobeLaing"."""
+    return db.scalar(select(User).where(func.lower(User.handle) == username.lower()))
 
 
-def create(db: Session, *, handle: str, display_name: str, avatar_id: int, xp: int = 0) -> User:
-    user = User(handle=handle, display_name=display_name, avatar_id=avatar_id, xp=xp)
+def top_by_xp(db: Session, limit: int) -> list[User]:
+    # Ties go to the older account (lower id), so the order is stable between requests.
+    return list(db.scalars(select(User).order_by(User.xp.desc(), User.id.asc()).limit(limit)))
+
+
+def create(
+    db: Session, *, handle: str, display_name: str, avatar_id: int, xp: int = 0, password_hash: str | None = None
+) -> User:
+    user = User(handle=handle, display_name=display_name, avatar_id=avatar_id, xp=xp, password_hash=password_hash)
     db.add(user)
     db.flush()
     return user

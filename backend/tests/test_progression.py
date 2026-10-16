@@ -6,7 +6,7 @@ from app.progression import next_rank, progress_to_next, rank_for_xp
 
 def test_config_values():
     assert progression.XP_PER_VOTE == 10
-    assert progression.XP_PER_POST == 25
+    assert progression.XP_PER_POST == 20
     assert [(r.key, r.min_xp) for r in progression.RANKS] == [
         ("bronze", 0), ("silver", 100), ("gold", 300), ("platinum", 700), ("palladium", 1500),
     ]

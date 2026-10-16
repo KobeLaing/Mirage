@@ -6,7 +6,8 @@ from app.db.models import User
 from app.errors import NotFound
 from app.progression import Rank, next_rank, progress_to_next, rank_for_xp
 from app.repositories import user_repo
-from app.schemas.users import Profile, RankOut, UserSummary
+from app.schemas.auth import SessionOut
+from app.schemas.users import BlindModeState, Profile, RankOut, UserSummary
 
 log = logging.getLogger("mirage.users")
 
@@ -38,13 +39,8 @@ def to_profile(user: User) -> Profile:
     )
 
 
-def resolve(db: Session, user_id: int) -> User | None:
-    """Used only by the identity dependency."""
-    return user_repo.get(db, user_id)
-
-
-def list_users(db: Session) -> list[UserSummary]:
-    return [to_summary(u) for u in user_repo.list_all(db)]
+def session_view(db: Session, user: User, csrf_token: str) -> SessionOut:
+    return SessionOut(user=get_profile(db, user.id), blind_mode=user.blind_mode, csrf_token=csrf_token)
 
 
 def get_profile(db: Session, user_id: int) -> Profile:
@@ -61,3 +57,11 @@ def set_avatar(db: Session, user: User, avatar_id: int) -> Profile:
     db.commit()
     log.info("user.avatar_changed", extra={"avatar_id": avatar_id})
     return get_profile(db, user.id)
+
+
+def set_blind_mode(db: Session, user: User, enabled: bool) -> BlindModeState:
+    # Saved on the user row (not in the browser), so it applies on every device.
+    user.blind_mode = enabled
+    db.commit()
+    log.info("user.blind_mode_changed", extra={"enabled": enabled})
+    return BlindModeState(blind_mode=user.blind_mode)

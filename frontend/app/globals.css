@@ -35,6 +35,18 @@ body {
   outline-offset: 2px;
 }
 
+/* HONEYPOT: hides the login form's trap field (see LoginForm.tsx). Moved far
+   off-screen rather than display:none or type="hidden", which many bots detect
+   and skip. */
+.hp-field {
+  position: absolute;
+  left: -10000px;
+  top: auto;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

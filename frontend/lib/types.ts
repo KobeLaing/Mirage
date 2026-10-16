@@ -30,6 +30,13 @@ export interface Profile {
   progress: number;
 }
 
+/** Returned by login and by the "am I signed in?" check. */
+export interface SessionInfo {
+  user: Profile;
+  blind_mode: boolean;
+  csrf_token: string;
+}
+
 export interface Media {
   kind: "image" | "video";
   url: string;
@@ -54,11 +61,58 @@ export interface Post {
   author: UserSummary;
   caption: string | null;
   media: Media;
-  votes: VoteCounts;
-  reactions: ReactionCounts;
+  // null while Blind Mode hides them (blind === true): the server never sent them.
+  votes: VoteCounts | null;
+  reactions: ReactionCounts | null;
   my_vote: VoteValue | null;
   my_reaction: ReactionKind | null;
+  comment_count: number | null;
+  blind: boolean;
   created_at: string;
+}
+
+export interface Comment {
+  id: number;
+  post_id: number;
+  author: UserSummary;
+  body: string;
+  created_at: string;
+  mine: boolean;
+}
+
+export interface CommentList {
+  items: Comment[];
+}
+
+export interface LeaderboardEntry {
+  position: number;
+  user: UserSummary;
+  xp: number;
+  rank_name: string;
+}
+
+export interface Leaderboard {
+  items: LeaderboardEntry[];
+}
+
+export interface ScanSignal {
+  detector: string;
+  label: string;
+  status: "ok" | "no_signal" | "unavailable" | "error";
+  score: number | null;
+  conclusive: boolean;
+  weight: number;
+  explanation: string;
+}
+
+export interface ScanResult {
+  media_kind: "image" | "video";
+  verdict: "likely_ai" | "likely_real" | "inconclusive";
+  verdict_label: string;
+  /** 0..100, or null when the verdict is inconclusive. */
+  score: number | null;
+  signals: ScanSignal[];
+  notice: string;
 }
 
 export interface FeedPage {
@@ -69,7 +123,7 @@ export interface FeedPage {
 export interface VoteState {
   post_id: number;
   my_vote: VoteValue | null;
-  votes: VoteCounts;
+  votes: VoteCounts | null;
   me: { xp: number; rank: RankKey };
 }
 

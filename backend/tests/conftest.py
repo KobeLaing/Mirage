@@ -1,4 +1,5 @@
 import io
+import secrets
 import shutil
 from pathlib import Path
 
@@ -12,6 +13,21 @@ from app.db.session import build_engine, build_session_factory
 SEED_MEDIA = BACKEND_DIR.parent / "seed-media"
 
 
+FRONTEND_ORIGIN = "http://localhost:3000"
+# Fresh random signing key per test run: nothing secret-looking lives in the repo.
+TEST_SECRET = secrets.token_urlsafe(48)
+
+# Test-only passwords for the seeded accounts. Real ones come from backend/.env.
+SEED_PASSWORDS = {
+    "seed_kobe_password": "kobe-test-pw",
+    "seed_kara_password": "kara-test-pw",
+    "seed_altair_password": "altair-test-pw",
+    "seed_josie_password": "josie-test-pw",
+    "seed_terra_password": "terra-test-pw",
+    "seed_river_password": "river-test-pw",
+}
+
+
 @pytest.fixture
 def settings(tmp_path: Path) -> Settings:
     db_path = tmp_path / "test.db"
@@ -22,14 +38,16 @@ def settings(tmp_path: Path) -> Settings:
         upload_dir=tmp_path / "uploads",
         seed_media_dir=SEED_MEDIA,
         public_api_url="http://testserver",
-        frontend_origin="http://localhost:3000",
+        frontend_origin=FRONTEND_ORIGIN,
+        session_secret=TEST_SECRET,
         log_level="WARNING",
+        **SEED_PASSWORDS,
     )
 
 
 @pytest.fixture
 def migrated(settings: Settings) -> Settings:
-    upgrade_head(settings.database_url)
+    upgrade_head(settings.database_url, settings.upload_dir)
     return settings
 
 
@@ -42,20 +60,60 @@ def db(migrated: Settings):
     engine.dispose()
 
 
+_session_minter = None  # set by the `app` fixture; used by as_user()
+
+
 @pytest.fixture
 def app(migrated: Settings):
+    global _session_minter
     from app.main import create_app
 
     application = create_app(migrated)
+    _session_minter = _make_session_minter(application)
     yield application
+    _session_minter = None
     application.state.engine.dispose()
+
+
+def _make_session_minter(application):
+    """Creates a real server-side session for a user, exactly as login would,
+    and returns the headers a signed-in browser would send: the session cookie,
+    the matching CSRF token, and our frontend's Origin. One session per user,
+    reused for the whole test."""
+    from datetime import timedelta
+
+    from app.db.base import utcnow
+    from app.repositories import session_repo
+    from app.security.tokens import SESSION_COOKIE, session_id
+
+    cache: dict[int, dict] = {}
+
+    def mint(user_id: int) -> dict:
+        if user_id not in cache:
+            tokens = application.state.tokens
+            raw = tokens.new_secret()
+            with application.state.session_factory() as db:
+                session_repo.create(
+                    db, session_id=session_id(raw), user_id=user_id, expires_at=utcnow() + timedelta(hours=1)
+                )
+                db.commit()
+            cookie = tokens.sign(raw)
+            cache[user_id] = {
+                "Cookie": f"{SESSION_COOKIE}={cookie}",
+                "X-CSRF-Token": tokens.csrf_for(cookie),
+                "Origin": FRONTEND_ORIGIN,
+            }
+        return dict(cache[user_id])
+
+    return mint
 
 
 @pytest.fixture
 def client(app):
     from fastapi.testclient import TestClient
 
-    with TestClient(app) as c:
+    # https, so Secure cookies set by /auth/login are sent back like a browser would.
+    with TestClient(app, base_url="https://testserver") as c:
         yield c
 
 
@@ -73,10 +131,22 @@ def seeded_client(seeded, client):
 
 
 KOBE, KARA = 1, 2  # ids of the seeded users (Silver 150 XP, Gold 600 XP)
+ALTAIR, JOSIE, TERRA, RIVER = 3, 4, 5, 6  # the seeded community accounts
 
 
 def as_user(user_id: int) -> dict:
-    return {"X-User-Id": str(user_id)}
+    """Request headers for a signed-in user (needs the `app` fixture)."""
+    assert _session_minter is not None, "as_user() needs the app/client fixture"
+    return _session_minter(user_id)
+
+
+def login(client, username: str, password: str, website: str = ""):
+    """The real login flow, through the HTTP API, as the frontend does it."""
+    return client.post(
+        "/api/v1/auth/login",
+        json={"username": username, "password": password, "website": website},
+        headers={"Origin": FRONTEND_ORIGIN},
+    )
 
 
 def upload(client, user_id: int, data: bytes, filename="photo.jpg", content_type="image/jpeg", caption=None):

@@ -3,12 +3,12 @@
 import { useState } from "react";
 
 import { api, errorMessage } from "@/lib/api";
-import { useCurrentUser } from "@/lib/currentUser";
+import { useAuth } from "@/lib/auth";
 import { Avatar, AVATAR_IDS, AVATAR_NAMES } from "./Avatar";
 
 /** Shown inside the "change avatar" dialog on your own profile; the API only offers PUT /me/avatar anyway. */
 export function AvatarPicker({ current, onChanged }: { current: number; onChanged: () => void }) {
-  const { userId, refreshMe } = useCurrentUser();
+  const { userId, refreshMe } = useAuth();
   const [busy, setBusy] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -17,7 +17,7 @@ export function AvatarPicker({ current, onChanged }: { current: number; onChange
     setBusy(id);
     setError(null);
     try {
-      await api.setAvatar(userId, id);
+      await api.setAvatar(id);
       await refreshMe();
       onChanged();
     } catch (err) {

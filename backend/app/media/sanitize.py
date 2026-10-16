@@ -25,6 +25,28 @@ class CleanImage:
 _ANIMATED = {"GIF"}
 
 
+def verify(path: Path, detected: DetectedType, max_pixels: int) -> tuple[int, int]:
+    """Check the image decodes, without changing it. Returns (width, height).
+
+    Image.MAX_IMAGE_PIXELS makes Pillow refuse "decompression bombs": tiny
+    files that claim enormous dimensions and would use gigabytes of memory.
+    """
+    Image.MAX_IMAGE_PIXELS = max_pixels
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", Image.DecompressionBombWarning)
+            with Image.open(path, formats=[detected.pillow_format]) as probe:
+                size = probe.size
+                probe.verify()
+            with Image.open(path, formats=[detected.pillow_format]) as img:
+                img.load()  # verify() checks structure; load() proves the pixels decode
+            return size
+    except (Image.DecompressionBombError, Image.DecompressionBombWarning) as exc:
+        raise InvalidImage("image dimensions too large") from exc
+    except Exception as exc:  # Pillow raises many types for malformed input
+        raise InvalidImage("image could not be decoded") from exc
+
+
 def reencode(path: Path, detected: DetectedType, max_pixels: int) -> CleanImage:
     Image.MAX_IMAGE_PIXELS = max_pixels
     try:

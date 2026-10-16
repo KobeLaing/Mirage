@@ -1,12 +1,17 @@
 """XP and rank rules. The single source of truth for the game economy (FR-54).
 
+XP is earned only by actions the server performs and checks itself (voting,
+posting), never by a number the client sends. Commenting earns nothing on
+purpose, so it can't be spammed for points. These values live in code rather
+than environment variables, so a stray setting can't change the economy.
+
 Everything here is pure: no database, no HTTP. Services call these functions.
 """
 
 from dataclasses import dataclass
 
 XP_PER_VOTE = 10
-XP_PER_POST = 25
+XP_PER_POST = 20
 
 
 @dataclass(frozen=True)

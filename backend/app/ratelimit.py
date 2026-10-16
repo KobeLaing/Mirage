@@ -1,7 +1,15 @@
-"""Per-user rate limiting (SR-12).
+"""Rate limiting: "at most N actions per time window" for a given key.
+
+Keys look like "42:vote" (user 42 voting) or "login-ip:203.0.113.5". The
+limiter keeps the timestamps of recent actions per key (a sliding window).
+When a new action arrives, timestamps older than the window are dropped, and
+if N are still left the action is refused with how long to wait. A sliding
+window avoids the burst a fixed per-minute counter allows at the minute
+boundary.
 
 InMemoryRateLimiter is correct for one process. Running several API instances
-means swapping in a shared implementation (e.g. Redis) of the same protocol.
+means swapping in a shared implementation (e.g. Redis) of the same protocol,
+otherwise each instance would count separately.
 """
 
 import threading
